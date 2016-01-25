@@ -16,13 +16,24 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+  TODO: Write history to file:
+    fs.writeFile('../data.json', JSON.stringify(myobj, null, 2) , 'utf-8');
+
+  TODO: Read history from file:
+    data = JSON.parse(fs.readFileSync('../data.json'));
+*/
+
+var net = require('net');
+var fs = require('fs');
+
 String.prototype.cleanup = function() {
   return this.replace(/[^a-zA-Z0-9]+/g, '');
 }
 
 var tcpPort = 3000;
 
-var net = require('net');
+var history = [];
 
 var users = {
   count: 0,
@@ -45,6 +56,9 @@ function userJoins(socket, currentUserID) {
   users.nicks.push('User ' + currentUserID);
   console.log(users.nicks.slice(-1) + ' joined');
   socket.write('Welcome to TCP chat. ' + (users.sockets.length) + ' user(s) online incl. you.\n');
+  for (i=0; i<history.length; i++) {
+    socket.write(history[i]);
+  }
   socket.write('Choose a nickname: ');
   for (var i=0; i<users.sockets.length; i++) {
     if (users.sockets[i] == socket) {
@@ -64,11 +78,11 @@ function userLeaves(socket) {
   });
 }
 
-function chooseNickname(socket, data, currentUserID) {
+function chooseNickname(socket, name, currentUserID) {
   if (users.nicks[currentUserID-1] == 'User ' + currentUserID) {
-    if (!nickUsed(data.toString().cleanup())) {
-      users.nicks[currentUserID-1] = data.toString().cleanup();
-      console.log('User ' + currentUserID + ' choosed nickame ' +   data.toString().cleanup());
+    if (!nickUsed(name.toString().cleanup())) {
+      users.nicks[currentUserID-1] = name.toString().cleanup();
+      console.log('User ' + currentUserID + ' choosed nickame ' + name.toString().cleanup());
       return 1;
     }
     socket.write('This nickname is in use. Choose another nickname: ');
@@ -76,11 +90,21 @@ function chooseNickname(socket, data, currentUserID) {
   }
 }
 
-function processMessage(socket, data) {
+function addToHistory(msg) {
+  history.push(msg);
+
+  // cut last line if history exceeds 10 lines
+  if (history.length > 10) {
+    history = history.slice(1);
+  }
+}
+
+function processMessage(socket, msg) {
   // search socket where data comes from to add the correct nickname
   for (var i=0; i < users.sockets.length; i++) {
     if (socket == users.sockets[i]) {
-      data = users.nicks[i] + ': ' + data;
+      msg = users.nicks[i] + ': ' + msg;
+      addToHistory(msg);
     }
   }
   // send message to everyone but the sender
@@ -88,16 +112,16 @@ function processMessage(socket, data) {
     if (users.sockets[i] == socket) {
       continue;
     }
-    users.sockets[i].write(data);
+    users.sockets[i].write(msg);
   }
 }
 
 var chatserver = net.createServer(function(socket) {
   var currentUserID = ++users.count;
   userJoins(socket, currentUserID);
-  socket.on('data', function(data) {
-    if (chooseNickname(socket, data, currentUserID) == 1) { return };
-    processMessage(socket, data);
+  socket.on('data', function(msg) {
+    if (chooseNickname(socket, msg, currentUserID) == 1) { return };
+    processMessage(socket, msg);
   });
   userLeaves(socket);
 }).listen(3000);
