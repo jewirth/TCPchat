@@ -24,17 +24,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     data = JSON.parse(fs.readFileSync('../data.json'));
 */
 
-var net = require('net');
-var fs = require('fs');
-
 String.prototype.cleanup = function() {
   return this.replace(/[^a-zA-Z0-9]+/g, '');
 }
 
+var net = require('net');
+var fs = require('fs');
+
 var tcpPort = 3000;
-
 var history = [];
-
+var nextID = 0;
 var users = {
   count: 0,
   ids: [],
@@ -51,10 +50,11 @@ function nickUsed(nick) {
   return false;
 }
 
-function userJoins(socket, currentUserID) {
+function userJoins(socket, userid) {
+  users.count++;
   users.sockets.push(socket);
-  users.nicks.push('User ' + currentUserID);
-  console.log(users.nicks.slice(-1) + ' joined');
+  users.nicks.push('User ' + userid);
+  users.ids.push(userid)
   socket.write('Welcome to TCP chat. ' + (users.sockets.length) + ' user(s) online incl. you.\n');
   for (i=0; i<history.length; i++) {
     socket.write(history[i]);
@@ -64,40 +64,48 @@ function userJoins(socket, currentUserID) {
     if (users.sockets[i] == socket) {
       continue;
     }
-    users.sockets[i].write('INFO: someone joined the chat\n');
+    users.sockets[i].write('INFO: ' + users.nicks.slice(-1) + ' joined\n');
   }
 }
 
 function userLeaves(socket) {
   socket.on('end', function() {
     var i = users.sockets.indexOf(socket);
-    console.log(users.nicks[i] + ' leaves');
-    for (var j=0; j<users.sockets.length; j++) {
-      users.sockets[j].write(users.nicks[i] + ' left the chat\n');
-    }
+    var name = users.nicks[i];
     users.count--;
     users.ids.splice(i, 1);
     users.nicks.splice(i, 1);
     users.sockets.splice(i, 1);
+    for (var j=0; j<users.sockets.length; j++) {
+      users.sockets[j].write(name + ' left the chat\n');
+    }
   });
 }
 
-function chooseNickname(socket, name, currentUserID) {
-  if (users.nicks[currentUserID-1] == 'User ' + currentUserID) {
-    if (!nickUsed(name.toString().cleanup())) {
-      users.nicks[currentUserID-1] = name.toString().cleanup();
-      console.log('User ' + currentUserID + ' choosed nickame ' + name.toString().cleanup());
-      return 1;
+function chooseNickname(socket, name, userid) {
+  // find username with id <userid>
+  for (var i=0; i<users.ids.length; i++) {
+    if (users.ids[i] == userid) {
+      if (users.nicks[i] == 'User ' + userid) {
+        if (!nickUsed(name.toString().cleanup())) {
+          users.nicks[i] = name.toString().cleanup();
+          for (var j=0; j<users.sockets.length; j++) {
+            if (users.sockets[j] == socket) {
+              continue;
+            }
+            users.sockets[j].write('INFO: User ' + userid + ' choosed nickame ' + name.toString().cleanup()+'\n');
+          }
+          return 1;
+        }
+        socket.write('This nickname is in use. Choose another nickname: ');
+        return 1;
+      }
     }
-    socket.write('This nickname is in use. Choose another nickname: ');
-    return 1;
   }
 }
 
 function addToHistory(msg) {
   history.push(msg);
-
-  // cut last line if history exceeds 10 lines
   if (history.length > 10) {
     history = history.slice(1);
   }
@@ -121,10 +129,10 @@ function processMessage(socket, msg) {
 }
 
 var chatserver = net.createServer(function(socket) {
-  var currentUserID = ++users.count;
-  userJoins(socket, currentUserID);
+  var userid = nextID++;
+  userJoins(socket, userid);
   socket.on('data', function(msg) {
-    if (chooseNickname(socket, msg, currentUserID) == 1) { return };
+    if (chooseNickname(socket, msg, userid) == 1) { return };
     processMessage(socket, msg);
   });
   userLeaves(socket);
