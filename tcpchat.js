@@ -71,10 +71,14 @@ function userJoins(socket, currentUserID) {
 function userLeaves(socket) {
   socket.on('end', function() {
     var i = users.sockets.indexOf(socket);
-    users.sockets.splice(i, 1);
-    for (var i=0; i<users.sockets.length; i++) {
-      users.sockets[i].write('INFO: someone left the chat\n');
+    console.log(users.nicks[i] + ' leaves');
+    for (var j=0; j<users.sockets.length; j++) {
+      users.sockets[j].write(users.nicks[i] + ' left the chat\n');
     }
+    users.count--;
+    users.ids.splice(i, 1);
+    users.nicks.splice(i, 1);
+    users.sockets.splice(i, 1);
   });
 }
 
